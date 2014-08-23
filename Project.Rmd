@@ -1,0 +1,78 @@
+Practical Machine Learning Course Project
+========================================================
+
+````{r,echo=FALSE,results='hide'}
+#load required libraries
+setwd("~/Coursera/Practical Machine Learning/Project")
+source('~/Coursera/Practical Machine Learning/Project/WorkingFunctions.R')
+source('C:/R Tests/Machine Learning/ex3/LogisticRegFuncts_ex3.r')
+suppressMessages(library("caret", lib.loc="C:/Users/malvarez/Documents/R/win-library/3.1", warn.conflicts=FALSE, quietly=TRUE))
+suppressMessages(library("rattle", lib.loc="C:/Users/malvarez/Documents/R/win-library/3.1", warn.conflicts=FALSE, quietly=TRUE))
+````
+
+The purpose of this project is to train a predictive model based on the data supplied for the Qualitative Activity Recognizer for Weight Lifting Excercises. The training dataset contains 19,622 observations with 160 variables each, including a "classe" feature that represents the classification of the excercise. The procedure to take the measurements and derive some of the features can be read at the research paper that accompanies this dataset, found at: [this site](http://groupware.les.inf.puc-rio.br/public/papers/2013.Velloso.QAR-WLE.pdf)
+The type of excercise performed can belong to any of 5 different classes labeled "A" through "E". "A" represents the excercise being performed correctly, and "B" through "E" represent a common mistake while performing the excercise as described in the aforementioned paper.
+
+## Exploratory analysis
+The first step in buildin the model was to identify which of the 160 features may be valuable when trying to predict how the excercise had been performed. First, the data was loaded and the first seven columns were removed based on the fact that I deemed them not important to the predictive model. The removed columns contain a record identifier, the name of the person performing the excercise, three time stamps and an identifier for the window used on the capturing system, the code used was:
+
+```{r,results='hide'}
+train<-read.csv("./data/pml-training.csv",header=T)
+trainSub1<-train[,-(1:7)]
+```
+Furthermore, I separated the actual class we are trying to predict into a separate vector, like so:
+```{r,results='hide'}
+trainFactors<-trainSub1$classe
+trainLabels<-as.numeric(trainFactors)
+subTrainWOFactors<-trainSub1[,-getFactors(trainSub1)]
+subTrainClean<-removeNAs(subTrainWOFactors)
+```
+It should be noted that I also created a numeric vector out of the factors in order to use my training functions as described later. The next step, an exploratory analysis of the remaining features, proved that we had several columns that had been loaded as factor variables, only because they had many missing or blank values, we also had several numeric values that had mostly NA or missing values. All of these columns were deemed as not valuable and therefore removed from the training set. The resulting set contains only 52 variables which were plotted as in the following example in order to visualize potential correlations between them and the predicted factor:
+
+```{r,echo=FALSE}
+subTrainPlot<-subTrainClean
+subTrainPlot$classe<-trainFactors
+getPlot(1,subTrainPlot)
+```
+
+Having detected no significant variation between the value ranges, I decided to build a predictive model based on all the 52 variables as described in the following section.
+
+## Model building
+In order to build a predictive model, I used the algorithms based on logistic regression described in the Coursera course "Machine Learning" taught by Prof. Andrew Ng. I have translated these algorithms from Octave into R in order to train the model.
+The output of this training is a 5 by 53 matrix where each row represents an equation for each possible factor, and each column represents the weight of each variable (adding one for the intercept term).
+It's important to note that before I performed this training, I normalized the values in the training set by calculating the column means and standard deviation, then substracting said mean and dividing by each standard deviation like so:
+
+````{r,results='hide'}
+#obtain means and sd's for normalization
+trainMeans<-sapply(subTrainClean,mean)
+trainSDs<-sapply(subTrainClean,sd)
+
+#normalize parameters
+subTrainReg<-matrix(apply(subTrainClean,1,function(x){(x-trainMeans)/trainSDs}),byrow=T,ncol=ncol(subTrainClean))
+````
+
+Once the normalized dataset is in place, we are ready to train the model. The model is trained through a function called "OneVsAll", which basically optimizes an equation for each possible prediction (in this case our 5 classes) using the sigmoid function for logistic regression. After the optimization of the model is finished, we basically predict the values on which we trained to evaluate the in-sample error:
+
+````{r,results='hide'}
+TrainModel<-oneVsAll(as.matrix(subTrainReg),as.matrix(trainLabels),5,0.1)
+predictTrain<-predictOneVsAll(TrainModel,subTrainReg)
+````
+Once the predictions are complete, we evaluate the in-sample error, first by calculating the proportion of correct predictions overall, and then generating a confusion matrix that provides several measures of accuracy (such as sensitivity, recall and others):
+````{r}
+mean(predictTrain==trainLabels)
+confusionMatrix(predictTrain,trainLabels)
+````
+
+In order to evaluate another method, I also trained a small tree model and evaluated its accuracy as follows:
+
+````{r}
+TrainTree<-cbind(subTrainClean,trainFactors)
+modTree<-train(trainFactors~.,method="rpart",data=TrainTree)
+predictTrainTree<-predict(modTree,newdata=subTrainClean)
+mean(predictTrainTree==trainFactors)
+confusionMatrix(predictTrainTree,trainFactors)
+````
+
+## Conclusion
+Although a 73% accuracy result may not seem impressive, it is very much in line with the findings reported in the accompanying paper mentioned at the beginning of this report. Furthermore, it seems to me that we could possibly improve on the predictive power of the model from several fronts. First, most of the variables were discarded for lack of data. This may indicate that we could improve the predictive power by improving the quality of the sensors, placement or derivations performed to generate the dataset.
+Second, we could probably use a more sophisticated model, such as a neural network that may perform better. However, due to time constraints, this was not possible at this time.
